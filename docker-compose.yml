@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  document_slicer:
+    build: ./services/document_slicer
+    container_name: document_slicer
+    ports:
+      - "8090:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./services/frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8090
+    container_name: frontend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8090
+    ports:
+      - "8091:80"
+    depends_on:
+      - document_slicer
+    restart: unless-stopped
