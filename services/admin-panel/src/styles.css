@@ -120,6 +120,14 @@ body {
   background: #f8fafc;
 }
 
+.upload__hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+}
+
+
 .upload__button,
 .results__actions button {
   padding: 12px 16px;

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, Path, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from .llm import client
 from .reviews import evaluate_section_file
@@ -23,30 +23,39 @@ async def health() -> HealthResponse:
         model_available=settings.ollama_model in available,
     )
 
-
-@router.post("/full-prepared", response_model=FullProcessingResponse)
-async def review_prepared_sections(
-    # key: str = Path(..., description="Роль анализа: lawyer/economist/accountant"),
-    file: UploadFile = File(...),
-) -> FullProcessingResponse:
+async def _prepare_sections_from_upload(file: UploadFile) -> tuple[str, str | None, list[str], list[int | None], str]:
     raw_bytes = await file.read()
     try:
         payload = raw_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="Файл должен быть в кодировке UTF-8") from exc
-
-    normalized_key =  "lawyer"
-    if normalized_key not in {"lawyer", "economist", "accountant"}:
-        raise HTTPException(status_code=422, detail="Некорректный тип обработки")
-
     sections, specification_text = build_chunks_from_payload(payload)
-    combined_text = build_sections_instruction(sections, specification_text)
+    combined_text = build_sections_instruction(sections)
     document_html = render_document_html(sections, specification_text)
+    titles = [
+        "Шапка" if section.number is None and not section.is_specification else (
+            "Спецификация" if section.is_specification else f"Раздел {section.number}"
+        )
+        for section in sections
+    ]
+    numbers = [section.number for section in sections]
+    return combined_text, specification_text, titles, numbers, document_html
 
-    _, overall_score, inaccuracy, red_flags, html_report, _ = await evaluate_section_file(
+@router.post(
+    "/full-prepared",
+    response_model=FullProcessingResponse,
+    response_model_exclude_none=True,
+)
+async def review_prepared_sections(
+    file: UploadFile = File(...),
+) -> FullProcessingResponse:
+    combined_text, specification_text, titles, numbers, document_html = await _prepare_sections_from_upload(file)
+
+    reviews, overall_score, inaccuracy, red_flags, html_report, debug = await evaluate_section_file(
         combined_text,
         document_html,
-        role_key=normalized_key,
+        expected_titles=titles,
+        expected_numbers=numbers,
     )
 
     return FullProcessingResponse(
@@ -55,6 +64,33 @@ async def review_prepared_sections(
         overall_score=overall_score,
         inaccuracy=inaccuracy,
         red_flags=red_flags,
+        sections=reviews,
         html=html_report,
+        debug=debug,
         debug_message=None,
+    )
+
+@router.post(
+    "/full",
+    response_model=FullProcessingResponse,
+    response_model_exclude_none=True,
+    response_model_exclude={"sections"},
+)
+async def review_full(
+    file: UploadFile = File(...),
+) -> FullProcessingResponse:
+    combined_text, _, titles, numbers, document_html = await _prepare_sections_from_upload(file)
+
+    reviews, overall_score, inaccuracy, red_flags, html_report, _ = await evaluate_section_file(
+        combined_text,
+        document_html,
+        expected_titles=titles,
+        expected_numbers=numbers,
+    )
+
+    return FullProcessingResponse(
+        overall_score=overall_score,
+        inaccuracy=inaccuracy,
+        red_flags=red_flags or "",
+        html=html_report,
     )

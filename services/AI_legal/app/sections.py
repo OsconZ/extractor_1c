@@ -17,6 +17,7 @@ class SectionChunk:
     number: int | None
     title: str
     content: str
+    is_specification: bool = False
 
 
 def _extract_part_index(key: str) -> int | None:
@@ -70,17 +71,26 @@ def build_chunks_from_payload(payload: str) -> tuple[list[SectionChunk], str | N
     specification_text: str | None = None
 
     for _, (key, index, content) in enumerate(entries):
-        if not content:
-            continue
-
-        if specification_text is None and _looks_like_specification(key, index):
-            specification_text = content
-            continue
+        
+        is_specification = _looks_like_specification(key, index)
+        if is_specification:
+            specification_text = specification_text or content
 
         number = None if index is None or index == 0 else index
-        fallback_title = "Шапка" if number is None else f"Раздел {number}"
+        fallback_title = (
+            "Шапка"
+            if number is None
+            else ("Спецификация" if is_specification else f"Раздел {number}")
+        )
         title = _normalize_title(content, fallback_title)
-        sections.append(SectionChunk(number=number, title=title, content=content))
+        sections.append(
+            SectionChunk(
+                number=number,
+                title=title,
+                content=content,
+                is_specification=is_specification,
+            )
+        )
 
     if not sections:
         raise HTTPException(status_code=422, detail="Секции не содержат текстового контента")
@@ -99,25 +109,23 @@ def _load_instruction_text(number: int | None) -> str | None:
     return None
 
 
-def build_sections_instruction(sections: list[SectionChunk], specification_text: str | None = None) -> str:
+def build_sections_instruction(sections: list[SectionChunk]) -> str:
     parts: list[str] = []
     for section in sections:
         is_header = section.number is None
-        section_label = "Шапка" if is_header else f"Раздел {section.number}"
-        instruction_text = _load_instruction_text(section.number)
+        instruction_index = 16 if section.is_specification else section.number
+        section_label = (
+            "Шапка"
+            if is_header and not section.is_specification
+            else "Спецификация" if section.is_specification else f"Раздел {section.number}"
+        )
+        instruction_text = _load_instruction_text(instruction_index)
         if instruction_text:
             parts.append(instruction_text)
         parts.append(f"{section_label}:")
         parts.append(section.content or "(раздел пуст)")
         parts.append("")
 
-    if specification_text:
-        parts.append("Инструкция к спецификации:")
-        instruction_text = _load_instruction_text(16)
-        if instruction_text:
-            parts.append(instruction_text)
-        parts.append("TITLE: Приложение №1 Спецификация:")
-        parts.append(specification_text)
 
     return "\n".join(parts).rstrip()
 
@@ -126,7 +134,9 @@ def render_document_html(sections: Iterable[SectionChunk], specification_text: s
     blocks: list[str] = []
 
     for section in sections:
-        heading = "Шапка" if section.number is None else f"Раздел {section.number}"
+        heading = "Шапка" if section.number is None and not section.is_specification else (
+            "Спецификация" if section.is_specification else f"Раздел {section.number}"
+        )
         blocks.append(
             f"""
             <section>
@@ -136,7 +146,9 @@ def render_document_html(sections: Iterable[SectionChunk], specification_text: s
             """.strip()
         )
 
-    if specification_text:
+    has_spec_section = any(section.is_specification for section in sections)
+
+    if specification_text and not has_spec_section:
         blocks.append(
             f"""
             <section>

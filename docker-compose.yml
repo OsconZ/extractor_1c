@@ -21,11 +21,11 @@ services:
       context: ./services/admin-panel
       args:
         VITE_SLICER_API_BASE_URL: http://localhost:8090
-        VITE_AI_LAWYER_API_BASE_URL: http://localhost:8092
+        VITE_AI_LEGAL_API_BASE_URL: http://localhost:8092
     container_name: admin-panel
     environment:
       - VITE_SLICER_API_BASE_URL=http://localhost:8090
-      - VITE_AI_LAWYER_API_BASE_URL=http://localhost:8092
+      - VITE_AI_LEGAL_API_BASE_URL=http://localhost:8092
     ports:
       - "8091:80"
     restart: unless-stopped

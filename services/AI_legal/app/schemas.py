@@ -13,6 +13,7 @@ class LlmDebugInfo(BaseModel):
 
 
 class SectionReview(BaseModel):
+    number: Optional[int] = Field(default=None, description="Порядковый номер раздела")
     title: str = Field(..., description="Название раздела")
     resume: str = Field(..., description="Краткое резюме раздела")
     risks: str = Field(..., description="Перечень рисков по разделу")
@@ -52,7 +53,13 @@ class FullProcessingResponse(BaseModel):
     red_flags: Optional[str] = Field(
         default=None, description="Серьезные ошибки по документу"
     )
+    sections: List[SectionReview] = Field(
+        default_factory=list, description="Оценка и сводка по каждой секции"
+    )
     html: str = Field(..., description="HTML-страница со сводкой по разделам")
+    debug: Optional[LlmDebugInfo] = Field(
+        default=None, description="Отладочная информация с промптом и ответом"
+    )
     debug_message: Optional[str] = Field(
         default=None, description="Отладочная информация о последнем отчете"
     )
