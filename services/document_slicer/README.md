@@ -56,5 +56,12 @@ docker compose -f docker-compose.yml up --build
 }
 ```
 
+### `POST /api/sections/dispatch`
+Принимает файл договора и после разбиения на секции отправляет результаты сразу в несколько сервисов.
+Для анализа по умолчанию используются эндпойнты `http://192.168.3.63:10000/analyze` и `/api/sections/full`
+с фоллбеком на `/api/sections/full-prepared` — адреса можно переопределить переменными окружения
+`ANALYZE_SERVICE_URL`, `SECTIONS_SERVICE_URL` и `SECTIONS_FALLBACK_URL`.
+Возвращает объединённый JSON с ответами всех сервисов и исходными секциями (`parts`).
+
 ### `GET /health`
 Проверка живости контейнера.

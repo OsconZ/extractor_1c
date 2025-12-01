@@ -41,3 +41,20 @@ export type AiLegalResponse = {
   debug_message?: string;
   sections?: SectionReview[];
 };
+
+export type ServiceDispatchResult = {
+  service: string;
+  url: string;
+  status: number | null;
+  fallback_url?: string | null;
+  fallback_status?: number | null;
+  used_fallback?: boolean;
+  response?: unknown;
+  error?: string | null;
+};
+
+export type DispatchResponse = {
+  parts: Record<string, string>;
+  combined: Record<string, unknown>;
+  services: Record<string, ServiceDispatchResult>;
+};
