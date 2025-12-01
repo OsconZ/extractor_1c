@@ -1,21 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .document.reader import load_blocks
 from .document.spec_extractor import extract_specification_from_blocks
 from .services.section_splitter import SectionChunk, split_into_sections
 
 app = FastAPI(title="Document Splitter Service", version="0.1.0")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8091"],
@@ -23,6 +26,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+subscribers: List[asyncio.Queue] = []
+
+@app.get("/api/timer/events")
+async def timer_events():
+    """
+    Все открывшие /timer.html подключаются сюда.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+    subscribers.append(queue)
+
+    async def event_stream():
+        try:
+            while True:
+                msg = await queue.get()
+                yield f"event: {msg['event']}\ndata: {msg['time']}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            subscribers.remove(queue)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+async def broadcast(event: str, timestamp: float):
+    """
+    Рассылает событие всем слушателям /api/timer/events
+    """
+    data = {"event": event, "time": timestamp}
+    for q in subscribers:
+        await q.put(data)
+
 
 AI_ECONOM_SERVICE_URL = os.getenv("AI_ECONOM_SERVICE_URL", "http://192.168.3.63:10000/analyze")
 AI_LEGAL_SERVICE_URL = os.getenv("AI_LEGAL_SERVICE_URL", "http://ai_legal:8000/api/sections/full")
@@ -198,6 +233,10 @@ async def split_document(file: UploadFile = File(...)) -> JSONResponse:
 
 @app.post("/api/sections/dispatch")
 async def dispatch_sections(file: UploadFile = File(...)) -> JSONResponse:
+    
+    start = time.time()
+    await broadcast("start", start)
+
     parts = await _extract_parts(file)
     saved_paths = _persist_sections(parts)
 
@@ -216,8 +255,15 @@ async def dispatch_sections(file: UploadFile = File(...)) -> JSONResponse:
         )
         for result in service_results
     }
+    stop = time.time()
+    await broadcast("stop", stop)
+
     return JSONResponse(content=responses)
 
+
+@app.get("/time")
+async def time_page():
+    return FileResponse("static/time.html")
 
 @app.get("/health")
 async def health() -> dict[str, str]:
