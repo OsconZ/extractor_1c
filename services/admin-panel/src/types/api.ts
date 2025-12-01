@@ -42,4 +42,12 @@ export type AiLegalResponse = {
   sections?: SectionReview[];
 };
 
-export type DispatchResponse = Record<string, unknown>;
+export type DispatchServiceResult = {
+  url: string | null | undefined;
+  status: number | null | undefined;
+  response?: unknown;
+  error?: string | null;
+  elapsed_ms: number | null | undefined;
+};
+
+export type DispatchResponse = Record<string, DispatchServiceResult>;

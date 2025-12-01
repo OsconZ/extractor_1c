@@ -3,6 +3,7 @@ import { Hero } from '../components/Hero';
 import { SpecificationBlock } from '../components/SpecificationBlock';
 import {
   DispatchResponse,
+  DispatchServiceResult,
   SpecificationJson,
   SplitResponse,
   SpecificationResponse,
@@ -22,6 +23,16 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [dispatchResult, setDispatchResult] = useState<DispatchResponse | null>(null);
+  const [dispatchDuration, setDispatchDuration] = useState<number | null>(null);
+  const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
+
+  const formatDuration = (value: number | null) => {
+    if (typeof value !== 'number') return '—';
+    const totalSeconds = Math.floor(value / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes} мин ${seconds.toString().padStart(2, '0')} сек`;
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -77,6 +88,8 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
     event.preventDefault();
     setDispatchError(null);
     setDispatchResult(null);
+    setDispatchDuration(null);
+    setExpandedServices({});
 
     if (!dispatchFile) {
       setDispatchError('Пожалуйста, выберите файл для отправки в сервисы.');
@@ -86,6 +99,7 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
     const formData = new FormData();
     formData.append('file', dispatchFile);
 
+    const startedAt = performance.now();
     try {
       setDispatchLoading(true);
       const response = await fetch(`${baseUrl}/api/sections/dispatch`, {
@@ -100,11 +114,19 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
 
       const json = (await response.json()) as DispatchResponse;
       setDispatchResult(json);
+      setDispatchDuration(performance.now() - startedAt);
+      setExpandedServices(
+        Object.keys(json).reduce<Record<string, boolean>>((acc, key) => {
+          acc[key] = true;
+          return acc;
+        }, {})
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
       setDispatchError(message);
     } finally {
       setDispatchLoading(false);
+      setDispatchDuration(performance.now() - startedAt);
     }
   };
 
@@ -194,6 +216,9 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
         <section className="results">
           <div className="results__header">
             <h2>Ответы сервисов</h2>
+            <div className="results__subtitle">
+              Время ответа сервера: {formatDuration(dispatchDuration)}
+            </div>
             <div className="results__actions">
               <button type="button" onClick={() => setDispatchResult(null)}>
                 Очистить
@@ -205,14 +230,34 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
           </div>
 
           <div className="results__grid">
-            {Object.entries(dispatchResult).map(([service, payload]) => (
-              <article key={service} className="results__card">
-                <div className="results__title">{service}</div>
-                <pre className="results__text">
-                  {payload ? JSON.stringify(payload, null, 2) : '—'}
-                </pre>
-              </article>
-            ))}
+            {Object.entries(dispatchResult).map(([service, payload]) => {
+              const typedPayload = payload as DispatchServiceResult | null;
+              const resultBody = typedPayload?.response ?? typedPayload;
+              const isExpanded = expandedServices[service] ?? true;
+
+              return (
+                <article key={service} className="results__card">
+                  <div className="results__title-row">
+                    <div className="results__title">{service}</div>
+                    <button
+                      type="button"
+                      className="results__toggle"
+                      onClick={() =>
+                        setExpandedServices((prev) => ({
+                          ...prev,
+                          [service]: !isExpanded,
+                        }))
+                      }
+                    >
+                      {isExpanded ? 'Свернуть' : 'Развернуть'}
+                    </button>
+                  </div>
+                  <pre className={`results__text ${isExpanded ? 'results__text--expanded' : ''}`}>
+                    {resultBody ? JSON.stringify(resultBody, null, 2) : '—'}
+                  </pre>
+                </article>
+              );
+            })}
           </div>
         </section>
       )}

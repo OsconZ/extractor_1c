@@ -24,7 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-ANALYZE_SERVICE_URL = os.getenv("ANALYZE_SERVICE_URL", "http://192.168.3.63:10000/analyze")
+AI_ECONOM_SERVICE_URL = os.getenv("AI_ECONOM_SERVICE_URL", "http://192.168.3.63:10000/analyze")
 AI_LEGAL_SERVICE_URL = os.getenv("AI_LEGAL_SERVICE_URL", "http://ai_legal:8000/api/sections/full")
 
 HTTP_TIMEOUT = float(os.getenv("SERVICE_HTTP_TIMEOUT", "120"))
@@ -33,6 +33,9 @@ SECTIONS_FILE_NAME = os.getenv("SECTIONS_FILE_NAME", "sections.json")
 PART_16_FILE_NAME = os.getenv("PART_16_FILE_NAME", "part_16.json")
 BUDGET_FILE_PATH = Path(
     os.getenv("BUDGET_FILE_PATH", str(DATA_VOLUME_PATH / "budget.json"))
+)
+PART_16_FILE_PATH = Path(
+    os.getenv("PART_16_FILE_PATH", str(DATA_VOLUME_PATH / "part_16.json"))
 )
 
 def _section_to_text(section: SectionChunk) -> str:
@@ -94,7 +97,8 @@ def _persist_sections(parts: dict[str, str]) -> dict[str, Path]:
             json.dumps(parts, ensure_ascii=False, indent=2),
             encoding="utf-8"
         )
-        part_16_payload = parts.get("part_16", "")
+        part_16_payload = {"part_16": parts.get("part_16", "")}
+
         part_16_path.write_text(
             json.dumps(part_16_payload, ensure_ascii=False, indent=2),
             encoding="utf-8"
@@ -112,12 +116,12 @@ def _parse_response_payload(response: httpx.Response) -> Any:
     except Exception:
         return response.text
 
-async def _call_analyze_service(
+async def _call_ai_econom_service(
     client: httpx.AsyncClient, part_16_path: Path
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {
-        "service": "analyze",
-        "url": ANALYZE_SERVICE_URL,
+        "service": "ai_econom",
+        "url": AI_ECONOM_SERVICE_URL,
         "status": None,
         "response": None,
         "error": None,
@@ -127,23 +131,25 @@ async def _call_analyze_service(
         result["error"] = f"Budget file not found at {BUDGET_FILE_PATH}"
         return result
 
-    try:
-        part_16_payload = part_16_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        result["error"] = f"Failed to read part_16 payload: {exc}"
+    if not PART_16_FILE_PATH.exists():
+        result["error"] = f"Budget file not found at {PART_16_FILE_PATH}"
         return result
 
     files = {
-        "budget": (
+        "budget_file": (
             BUDGET_FILE_PATH.name,
             BUDGET_FILE_PATH.open("rb"),
-            "application/octet-stream",
+            "application/json",
         ),
-        "part_16": ("part_16.json", part_16_payload, "application/json"),
+        "spec_file": (
+            PART_16_FILE_PATH.name,
+            PART_16_FILE_PATH.open("rb"),
+            "application/json",
+        ),
     }
 
     try:
-        response = await client.post(ANALYZE_SERVICE_URL, files=files)
+        response = await client.post(AI_ECONOM_SERVICE_URL, files=files)
         result["status"] = response.status_code
         if response.status_code == 200:
             result["response"] = _parse_response_payload(response)
@@ -153,7 +159,8 @@ async def _call_analyze_service(
         result["error"] = str(exc)
     finally:
         try:
-            files["budget"][1].close()
+            files["budget_file"][1].close()
+            files["spec_file"][1].close()
         except Exception:
             pass
 
@@ -195,11 +202,11 @@ async def dispatch_sections(file: UploadFile = File(...)) -> JSONResponse:
     saved_paths = _persist_sections(parts)
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        analyze_task = asyncio.create_task(
-            _call_analyze_service(client, saved_paths["part_16"])
+        ai_econom_task = asyncio.create_task(
+            _call_ai_econom_service(client, saved_paths["part_16"])
         )
         ai_legal_task = asyncio.create_task(_call_ai_legal_service(client, parts))
-        service_results = await asyncio.gather(analyze_task, ai_legal_task)
+        service_results = await asyncio.gather(ai_econom_task, ai_legal_task)
 
     responses = {
         result["service"]: (

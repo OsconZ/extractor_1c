@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Body
+import json
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 
 from .llm import client
 from .reviews import evaluate_section_file
@@ -44,8 +45,21 @@ async def _prepare_sections_from_payload(
     response_model_exclude_none=True,
 )
 async def review_prepared_sections(
-    payload: dict[str, str] = Body(...),
+    file: UploadFile = File(...),
 ) -> FullProcessingResponse:
+    try:
+        raw_payload = (await file.read()).decode("utf-8")
+    except UnicodeDecodeError as exc:  # pragma: no cover - defensive decoding
+        raise HTTPException(status_code=400, detail="Не удалось прочитать файл как UTF-8") from exc
+
+    if not raw_payload.strip():
+        raise HTTPException(status_code=400, detail="Файл с секциями пуст")
+    try:
+        payload = json.loads(raw_payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Некорректный JSON в файле") from exc
+
+    # CHANGED — используем правильную переменную
     combined_text, specification_text, titles, numbers, document_html = await _prepare_sections_from_payload(payload)
 
     reviews, overall_score, inaccuracy, red_flags, html_report, debug = await evaluate_section_file(
@@ -77,7 +91,7 @@ async def review_full(
     payload: dict[str, str] = Body(...),
 ) -> FullProcessingResponse:
     combined_text, _, titles, numbers, document_html = await _prepare_sections_from_payload(payload)
-    
+
     reviews, overall_score, inaccuracy, red_flags, html_report, _ = await evaluate_section_file(
         combined_text,
         document_html,

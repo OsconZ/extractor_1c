@@ -43,11 +43,9 @@ export function AiLegalPage({ baseUrl }: AiLegalPageProps) {
       };
 
       try {
-        const data = await tryCall('/api/sections/full');
+        const data = await tryCall('/api/sections/full-prepared');
         setResult(data);
       } catch (err) {
-        const fallback = await tryCall('/api/sections/full-prepared');
-        setResult(fallback);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';

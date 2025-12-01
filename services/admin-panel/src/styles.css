@@ -193,7 +193,8 @@ body {
 }
 
 .results__grid {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
@@ -227,6 +228,33 @@ body {
   white-space: pre-wrap;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   font-size: 13px;
+}
+
+.results__text--expanded {
+  max-height: none;
+}
+
+.results__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.results__toggle {
+  border: 1px solid #e2e8f0;
+  background: #0f172a;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 150ms ease, transform 150ms ease;
+}
+
+.results__toggle:hover {
+  background: #111827;
+  transform: translateY(-1px);
 }
 
 .results__list {
