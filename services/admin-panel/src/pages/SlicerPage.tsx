@@ -205,31 +205,11 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
           </div>
 
           <div className="results__grid">
-            <article className="results__card">
-              <div className="results__title">Итоговый JSON</div>
-              <pre className="results__text">
-                {JSON.stringify(dispatchResult.combined, null, 2) || '—'}
-              </pre>
-            </article>
-
-            {Object.values(dispatchResult.services).map((service) => (
-              <article key={service.service} className="results__card">
-                <div className="results__title">{service.service}</div>
-                <p className="results__meta">
-                  <strong>URL:</strong> {service.url}
-                  <br />
-                  <strong>Статус:</strong> {service.status ?? '—'}
-                  {service.used_fallback && (
-                    <>
-                      <br />
-                      <strong>Фоллбек:</strong> {service.fallback_status ?? '—'}
-                    </>
-                  )}
-                </p>
+            {Object.entries(dispatchResult).map(([service, payload]) => (
+              <article key={service} className="results__card">
+                <div className="results__title">{service}</div>
                 <pre className="results__text">
-                  {service.response
-                    ? JSON.stringify(service.response, null, 2)
-                    : service.error ?? '—'}
+                  {payload ? JSON.stringify(payload, null, 2) : '—'}
                 </pre>
               </article>
             ))}

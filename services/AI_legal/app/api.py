@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body
 
 from .llm import client
 from .reviews import evaluate_section_file
@@ -23,12 +23,9 @@ async def health() -> HealthResponse:
         model_available=settings.ollama_model in available,
     )
 
-async def _prepare_sections_from_upload(file: UploadFile) -> tuple[str, str | None, list[str], list[int | None], str]:
-    raw_bytes = await file.read()
-    try:
-        payload = raw_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Файл должен быть в кодировке UTF-8") from exc
+async def _prepare_sections_from_payload(
+    payload: dict[str, str]
+) -> tuple[str, str | None, list[str], list[int | None], str]:
     sections, specification_text = build_chunks_from_payload(payload)
     combined_text = build_sections_instruction(sections)
     document_html = render_document_html(sections, specification_text)
@@ -47,9 +44,9 @@ async def _prepare_sections_from_upload(file: UploadFile) -> tuple[str, str | No
     response_model_exclude_none=True,
 )
 async def review_prepared_sections(
-    file: UploadFile = File(...),
+    payload: dict[str, str] = Body(...),
 ) -> FullProcessingResponse:
-    combined_text, specification_text, titles, numbers, document_html = await _prepare_sections_from_upload(file)
+    combined_text, specification_text, titles, numbers, document_html = await _prepare_sections_from_payload(payload)
 
     reviews, overall_score, inaccuracy, red_flags, html_report, debug = await evaluate_section_file(
         combined_text,
@@ -77,10 +74,10 @@ async def review_prepared_sections(
     response_model_exclude={"sections"},
 )
 async def review_full(
-    file: UploadFile = File(...),
+    payload: dict[str, str] = Body(...),
 ) -> FullProcessingResponse:
-    combined_text, _, titles, numbers, document_html = await _prepare_sections_from_upload(file)
-
+    combined_text, _, titles, numbers, document_html = await _prepare_sections_from_payload(payload)
+    
     reviews, overall_score, inaccuracy, red_flags, html_report, _ = await evaluate_section_file(
         combined_text,
         document_html,

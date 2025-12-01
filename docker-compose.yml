@@ -5,6 +5,8 @@ services:
     ports:
       - "8090:8000"
     restart: unless-stopped
+    volumes:
+      - data:/data
 
   ai_legal:
     build: ./services/ai_legal
@@ -29,3 +31,6 @@ services:
     ports:
       - "8091:80"
     restart: unless-stopped
+
+volumes:
+  data:

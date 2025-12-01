@@ -47,14 +47,18 @@ def _looks_like_specification(key: str, index: int | None) -> bool:
     return False
 
 
-def build_chunks_from_payload(payload: str) -> tuple[list[SectionChunk], str | None]:
+def build_chunks_from_payload(payload: str | dict[str, str]) -> tuple[list[SectionChunk], str | None]:
+    if isinstance(payload, dict):
+        raw_payload = json.dumps(payload, ensure_ascii=False)
+    else:
+        raw_payload = payload
     try:
-        data = json.loads(payload)
+        data = json.loads(raw_payload)
     except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Файл должен содержать корректный JSON") from exc
+        raise HTTPException(status_code=400, detail="Тело запроса должно содержать корректный JSON") from exc
 
     if not isinstance(data, dict) or not data:
-        raise HTTPException(status_code=422, detail="Файл с секциями пуст или имеет неверный формат")
+        raise HTTPException(status_code=422, detail="Тело запроса с секциями пусто или имеет неверный формат")
 
     entries: list[tuple[str, int | None, str]] = []
     for key, value in data.items():
