@@ -3,7 +3,6 @@ import { Sidebar } from './components/Sidebar';
 import { HomePage } from './pages/HomePage';
 import { SlicerPage } from './pages/SlicerPage';
 import { AiLegalPage } from './pages/AiLegalPage';
-import { TimerPage } from './pages/TimerPage';
 import { Page } from './types/navigation';
 import { DispatchResponse } from './types/api';
 
@@ -23,9 +22,6 @@ export default function App() {
 
   const [activePage, setActivePage] = useState<Page>('home');
   
-  if (typeof window !== 'undefined' && window.location.pathname === '/timer') {
-    return <TimerPage baseUrl={slicerBaseUrl} />;
-  }
 
   return (
     <div className="layout">

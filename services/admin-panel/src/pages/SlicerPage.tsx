@@ -174,9 +174,6 @@ export function SlicerPage({ baseUrl }: SlicerPageProps) {
             {dispatchLoading ? 'Отправка…' : 'Отправить в сервисы'}
           </button>
 
-          <p className="upload__hint">
-            Для замера времени используйте <a className="link" href="/timer">страницу таймера /time</a>.
-          </p>
         </form>
       </section>
 
