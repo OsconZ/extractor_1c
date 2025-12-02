@@ -61,6 +61,9 @@ async def broadcast(event: str, timestamp: float):
 
 AI_ECONOM_SERVICE_URL = os.getenv("AI_ECONOM_SERVICE_URL", "http://192.168.3.63:10000/analyze")
 AI_LEGAL_SERVICE_URL = os.getenv("AI_LEGAL_SERVICE_URL", "http://ai_legal:8000/api/sections/full")
+CONTRACT_EXTRACTOR_URL = os.getenv(
+    "CONTRACT_EXTRACTOR_URL", "http://192.168.3.63:8085/qa/docx?plan=default"
+)
 
 HTTP_TIMEOUT = float(os.getenv("SERVICE_HTTP_TIMEOUT", "120"))
 DATA_VOLUME_PATH = Path(os.getenv("DATA_VOLUME_PATH", "/data"))
@@ -106,13 +109,23 @@ def _extract_specification_text(blocks: list[Any]) -> str:
         return ""
 
 
-async def _extract_parts(file: UploadFile) -> dict[str, str]:
+async def _read_upload_file(file: UploadFile) -> tuple[str, bytes]:
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Файл пуст или не содержит данных")
+    filename = file.filename or "document.docx"
+    content_type = (
+        file.content_type
+        or "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    return filename, content_type, content
+
+
+
+def _extract_parts(file_name: str, content: bytes) -> dict[str, str]:
 
     try:
-        blocks = load_blocks(file.filename, content)
+        blocks = load_blocks(file_name, content)
     except Exception as exc:  # pragma: no cover - defensive parsing guard
         raise HTTPException(status_code=400, detail=f"Не удалось разобрать файл: {exc}") from exc
 
@@ -152,7 +165,7 @@ def _parse_response_payload(response: httpx.Response) -> Any:
         return response.text
 
 async def _call_ai_econom_service(
-    client: httpx.AsyncClient, part_16_path: Path
+    client: httpx.AsyncClient, PART_16_FILE_PATH: Path
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "service": "ai_econom",
@@ -171,11 +184,11 @@ async def _call_ai_econom_service(
         return result
 
     files = {
-        "budget_file": (
-            BUDGET_FILE_PATH.name,
-            BUDGET_FILE_PATH.open("rb"),
-            "application/json",
-        ),
+        # "budget_file": (
+        #     BUDGET_FILE_PATH.name,
+        #     BUDGET_FILE_PATH.open("rb"),
+        #     "application/json",
+        # ),
         "spec_file": (
             PART_16_FILE_PATH.name,
             PART_16_FILE_PATH.open("rb"),
@@ -194,7 +207,7 @@ async def _call_ai_econom_service(
         result["error"] = str(exc)
     finally:
         try:
-            files["budget_file"][1].close()
+            # files["budget_file"][1].close()
             files["spec_file"][1].close()
         except Exception:
             pass
@@ -223,10 +236,43 @@ async def _call_ai_legal_service(client: httpx.AsyncClient, parts: Dict[str, str
 
     return result
 
+async def _call_contract_extractor_service(
+    client: httpx.AsyncClient, file_name: str, content_type: str, content: bytes
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "service": "contract_extractor",
+        "url": CONTRACT_EXTRACTOR_URL,
+        "status": None,
+        "response": None,
+        "error": None,
+    }
+
+    files = {
+        "file": (
+            file_name,
+            content,
+            content_type,
+        )
+    }
+
+    try:
+        response = await client.post(
+            CONTRACT_EXTRACTOR_URL, files=files, headers={"accept": "application/json"}
+        )
+        result["status"] = response.status_code
+        if response.status_code == 200:
+            result["response"] = _parse_response_payload(response)
+        else:
+            result["error"] = response.text
+    except Exception as exc:  # pragma: no cover - defensive external call guard
+        result["error"] = str(exc)
+
+    return result
 
 @app.post("/api/sections/split")
 async def split_document(file: UploadFile = File(...)) -> JSONResponse:
-    parts = await _extract_parts(file)
+    file_name, content_type, content = await _read_upload_file(file)
+    parts = _extract_parts(file_name, content)
     _persist_sections(parts)
     return JSONResponse(content=parts)
 
@@ -237,7 +283,8 @@ async def dispatch_sections(file: UploadFile = File(...)) -> JSONResponse:
     start = time.time()
     await broadcast("start", start)
 
-    parts = await _extract_parts(file)
+    file_name, content_type, content = await _read_upload_file(file)
+    parts = _extract_parts(file_name, content)
     saved_paths = _persist_sections(parts)
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -245,16 +292,42 @@ async def dispatch_sections(file: UploadFile = File(...)) -> JSONResponse:
             _call_ai_econom_service(client, saved_paths["part_16"])
         )
         ai_legal_task = asyncio.create_task(_call_ai_legal_service(client, parts))
-        service_results = await asyncio.gather(ai_econom_task, ai_legal_task)
+        contract_extractor_task = asyncio.create_task(
+            _call_contract_extractor_service(client, file_name, content_type, content)
+        )
+        service_results = await asyncio.gather(
+            ai_econom_task, ai_legal_task, contract_extractor_task
+        )
 
-    responses = {
-        result["service"]: (
-            result["response"]
+    responses: dict[str, Any] = {
+        "ai_econom": None,
+        "ai_legal": None,
+        "ai_sb": None,
+        "contract_extractor": None,
+    }
+
+    for result in service_results:
+        payload = (
+            result.get("response")
             if result.get("response") is not None
             else {"error": result.get("error"), "status": result.get("status")}
         )
-        for result in service_results
-    }
+        if result["service"] == "contract_extractor":
+            contract_payload = payload
+            sb_payload = payload
+            if isinstance(payload, dict):
+                contract_payload = payload.get("result", payload)
+                sb_payload = payload.get("sb_check", payload)
+
+            responses["contract_extractor"] = contract_payload
+            responses["ai_sb"] = sb_payload
+        else:
+            responses[result["service"]] = payload
+
+    for key in ("ai_econom", "ai_legal", "ai_sb", "contract_extractor"):
+        if responses[key] is None:
+            responses[key] = {}
+
     stop = time.time()
     await broadcast("stop", stop)
 
